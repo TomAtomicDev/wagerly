@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import "@chainlink/contracts/src/v0.8/AutomationCompatible.sol";
+
 interface IERC20 {
     function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
     function transfer(address recipient, uint256 amount) external returns (bool);
     function balanceOf(address account) external view returns (uint256);
 }
 
-contract Wagerly {
+contract Wagerly is AutomationCompatible {
     address private constant FEE_ADDRESS = 0x9b63FA365019Dd7bdF8cBED2823480F808391970;
-    uint256 private nextBetId = 1;  
+    uint256 private nextBetId = 1;
+    uint256 private constant DISTRIBUTION_DELAY = 5 minutes;
 
     struct Bet {
         address bettor;
@@ -18,17 +21,18 @@ contract Wagerly {
 
     struct BetInstance {
         uint256 id;
-        string title;      
-        string[] options;  
-        uint256[] totalAmounts; 
+        string title;
+        string[] options;
+        uint256[] totalAmounts;
         uint256 minimumBetAmount;
         address tokenAddress;
-        mapping(address => Bet[]) bets;  
+        mapping(address => Bet[]) bets;
         address[] bettors;
         address creator;
         bool isClosed;
         bool isResolved;
         uint8 winningOption;
+        uint256 distributionTime; // Tiempo en el que se debe distribuir el premio
     }
 
     mapping(uint256 => BetInstance) private betInstances;
@@ -38,16 +42,15 @@ contract Wagerly {
     event BettingClosed(uint256 indexed betId);
     event BettingResolved(uint256 indexed betId, uint8 winningOption);
     event BetCancelled(uint256 indexed betId);
+    event WinningsDistributed(uint256 indexed betId);
 
     modifier onlyCreator(uint256 _betId) {
-        if (msg.sender != betInstances[_betId].creator) {
-            revert("Not authorized");
-        }
+        require(msg.sender == betInstances[_betId].creator, "Not authorized");
         _;
     }
 
     function createBetInstance(
-        string calldata _title,   
+        string calldata _title,
         uint8 _numOptions,
         string[] calldata _optionNames,
         uint256 _minimumBetAmount,
@@ -59,13 +62,9 @@ contract Wagerly {
         uint256 betId = nextBetId; 
         nextBetId++; 
 
-        if (betInstances[betId].creator != address(0)) {
-            revert("Bet instance with this ID already exists");
-        }
-
         BetInstance storage newInstance = betInstances[betId];
         newInstance.id = betId;
-        newInstance.title = _title;       
+        newInstance.title = _title;
         newInstance.minimumBetAmount = _minimumBetAmount;
         newInstance.creator = msg.sender;
         newInstance.tokenAddress = _tokenAddress;
@@ -96,15 +95,43 @@ contract Wagerly {
 
     function closeBetting(uint256 _betId) external onlyCreator(_betId) {
         BetInstance storage betInstance = betInstances[_betId];
+        require(!betInstance.isClosed, "Betting is already closed");
         betInstance.isClosed = true;
         emit BettingClosed(_betId);
     }
 
     function distributeWinnings(uint256 _betId, uint8 _winningOption) external onlyCreator(_betId) {
-        require(_winningOption >= 1 && _winningOption <= betInstances[_betId].options.length, "Invalid winning option");
-
         BetInstance storage betInstance = betInstances[_betId];
         require(betInstance.isClosed && !betInstance.isResolved, "Betting must be closed and not resolved");
+        require(_winningOption >= 1 && _winningOption <= betInstance.options.length, "Invalid winning option");
+
+        betInstance.isResolved = true;
+        betInstance.winningOption = _winningOption;
+        betInstance.distributionTime = block.timestamp + DISTRIBUTION_DELAY;
+
+        emit BettingResolved(_betId, _winningOption);
+    }
+
+    function checkUpkeep(bytes calldata) external view override returns (bool upkeepNeeded, bytes memory performData) {
+        for (uint256 betId = 1; betId < nextBetId; betId++) {
+            BetInstance storage betInstance = betInstances[betId];
+            if (betInstance.isResolved && !betInstance.isClosed && block.timestamp >= betInstance.distributionTime) {
+                return (true, abi.encode(betId));
+            }
+        }
+        return (false, "");
+    }
+
+    function performUpkeep(bytes calldata performData) external override {
+        (uint256 betId) = abi.decode(performData, (uint256));
+        BetInstance storage betInstance = betInstances[betId];
+        if (betInstance.isResolved && !betInstance.isClosed && block.timestamp >= betInstance.distributionTime) {
+            _distributeWinnings(betId);
+        }
+    }
+
+    function _distributeWinnings(uint256 _betId) internal {
+        BetInstance storage betInstance = betInstances[_betId];
 
         IERC20 token = IERC20(betInstance.tokenAddress);
 
@@ -112,33 +139,25 @@ contract Wagerly {
         for (uint8 i = 0; i < betInstance.totalAmounts.length; i++) {
             totalAmountToDistribute += betInstance.totalAmounts[i];
         }
-        uint256 totalAmountWinningOption = betInstance.totalAmounts[_winningOption - 1];
+        uint256 totalAmountWinningOption = betInstance.totalAmounts[betInstance.winningOption - 1];
 
         uint256 fee = totalAmountToDistribute / 100;
         uint256 creatorFee = fee;
         uint256 remainingAmount = totalAmountToDistribute - fee - creatorFee;
-        
+
         require(token.transfer(FEE_ADDRESS, fee), "Fee transfer failed");
         require(token.transfer(betInstance.creator, creatorFee), "Creator fee transfer failed");
 
-        if (betInstance.bettors.length == 0) {
-            revert("No bets placed");
-        } else {
-            for (uint256 i = 0; i < betInstance.bettors.length; i++) {
-                address bettor = betInstance.bettors[i];
-                Bet[] storage bets = betInstance.bets[bettor];
-                for (uint8 j = 0; j < bets.length; j++) {
-                    if (bets[j].bettor != address(0)) {
-                        uint256 amountToTransfer = (bets[j].amount * remainingAmount) / totalAmountWinningOption;
-                        require(token.transfer(bettor, amountToTransfer), "Winner transfer failed");
-                    }
-                }
+        for (uint256 i = 0; i < betInstance.bettors.length; i++) {
+            address bettor = betInstance.bettors[i];
+            Bet[] storage bets = betInstance.bets[bettor];
+            for (uint8 j = 0; j < bets.length; j++) {
+                uint256 amountToTransfer = (bets[j].amount * remainingAmount) / totalAmountWinningOption;
+                require(token.transfer(bettor, amountToTransfer), "Winner transfer failed");
             }
         }
 
-        betInstance.isResolved = true;
-        betInstance.winningOption = _winningOption;
-        emit BettingResolved(_betId, _winningOption);
+        emit WinningsDistributed(_betId);
     }
 
     function cancelBet(uint256 _betId) external onlyCreator(_betId) {
@@ -155,7 +174,7 @@ contract Wagerly {
         uint256 fee = totalAmountToDistribute / 100;
         uint256 creatorFee = fee;
         uint256 remainingAmount = totalAmountToDistribute - fee - creatorFee;
-        
+
         require(token.transfer(FEE_ADDRESS, fee), "Fee transfer failed");
         require(token.transfer(betInstance.creator, creatorFee), "Creator fee transfer failed");
 
@@ -174,43 +193,29 @@ contract Wagerly {
 
     function getBetInfo(uint256 _betId) external view returns (
         address creator,
-        string memory title,  
+        string memory title,
         string[] memory options,
         bool isClosed,
         bool isResolved,
         uint256 totalAmountBet,
         uint256[] memory totalAmounts,
         address tokenAddress,
-        uint8 winningOption
+        uint8 winningOption,
+        uint256 distributionTime
     ) {
         BetInstance storage betInstance = betInstances[_betId];
-
         creator = betInstance.creator;
-        title = betInstance.title;    
+        title = betInstance.title;
         options = betInstance.options;
         isClosed = betInstance.isClosed;
         isResolved = betInstance.isResolved;
-
-        totalAmounts = new uint256[](betInstance.totalAmounts.length);
         totalAmountBet = 0;
         for (uint8 i = 0; i < betInstance.totalAmounts.length; i++) {
-            totalAmounts[i] = betInstance.totalAmounts[i];
             totalAmountBet += betInstance.totalAmounts[i];
         }
-
+        totalAmounts = betInstance.totalAmounts;
         tokenAddress = betInstance.tokenAddress;
-        winningOption = betInstance.isResolved ? betInstance.winningOption : 0;
-
-        return (
-            creator,
-            title,
-            options,
-            isClosed,
-            isResolved,
-            totalAmountBet,
-            totalAmounts,
-            tokenAddress,
-            winningOption
-        );
+        winningOption = betInstance.winningOption;
+        distributionTime = betInstance.distributionTime;
     }
 }
