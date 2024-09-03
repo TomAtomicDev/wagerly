@@ -8,7 +8,8 @@ interface IERC20 {
 }
 
 contract Wagerly {
-    address private constant FEE_ADDRESS = 0xD7bF67d127Ea9c7F58122E965F2F7aE8f1b5032E;
+    address private constant FEE_ADDRESS = 0x9b63FA365019Dd7bdF8cBED2823480F808391970;
+    uint256 private nextBetId = 1;  
 
     struct Bet {
         address bettor;
@@ -16,12 +17,13 @@ contract Wagerly {
     }
 
     struct BetInstance {
-        string id;
-        string[] options;  // Array de nombres de opciones
-        uint256[] totalAmounts;  // Array de montos totales por opción
+        uint256 id;
+        string title;      
+        string[] options;  
+        uint256[] totalAmounts; 
         uint256 minimumBetAmount;
         address tokenAddress;
-        mapping(address => Bet[]) bets;  // Mapeo de apostadores a sus apuestas
+        mapping(address => Bet[]) bets;  
         address[] bettors;
         address creator;
         bool isClosed;
@@ -29,15 +31,15 @@ contract Wagerly {
         uint8 winningOption;
     }
 
-    mapping(string => BetInstance) private betInstances;
+    mapping(uint256 => BetInstance) private betInstances;
 
-    event BetInstanceCreated(address creator, string indexed betId, string[] options, uint256 minimumBetAmount, address tokenAddress);
-    event BetPlaced(string indexed betId, address indexed bettor, uint256 amount, uint8 option);
-    event BettingClosed(string indexed betId);
-    event BettingResolved(string indexed betId, uint8 winningOption);
-    event BetCancelled(string indexed betId);
+    event BetInstanceCreated(address creator, uint256 indexed betId, string title, string[] options, uint256 minimumBetAmount, address tokenAddress);
+    event BetPlaced(uint256 indexed betId, address indexed bettor, uint256 amount, uint8 option);
+    event BettingClosed(uint256 indexed betId);
+    event BettingResolved(uint256 indexed betId, uint8 winningOption);
+    event BetCancelled(uint256 indexed betId);
 
-    modifier onlyCreator(string memory _betId) {
+    modifier onlyCreator(uint256 _betId) {
         if (msg.sender != betInstances[_betId].creator) {
             revert("Not authorized");
         }
@@ -45,35 +47,38 @@ contract Wagerly {
     }
 
     function createBetInstance(
-    string calldata _betId,
-    uint8 _numOptions,
-    string[] calldata _optionNames,
-    uint256 _minimumBetAmount,
-    address _tokenAddress
-) external {
-    require(_numOptions >= 2 && _numOptions <= 5, "Invalid number of options");
-    require(_optionNames.length == _numOptions, "Option names length mismatch");
+        string calldata _title,   
+        uint8 _numOptions,
+        string[] calldata _optionNames,
+        uint256 _minimumBetAmount,
+        address _tokenAddress
+    ) external {
+        require(_numOptions >= 2 && _numOptions <= 5, "Invalid number of options");
+        require(_optionNames.length == _numOptions, "Option names length mismatch");
 
-    if (bytes(betInstances[_betId].id).length != 0) {
-        revert("Bet instance with this ID already exists");
+        uint256 betId = nextBetId; 
+        nextBetId++; 
+
+        if (betInstances[betId].creator != address(0)) {
+            revert("Bet instance with this ID already exists");
+        }
+
+        BetInstance storage newInstance = betInstances[betId];
+        newInstance.id = betId;
+        newInstance.title = _title;       
+        newInstance.minimumBetAmount = _minimumBetAmount;
+        newInstance.creator = msg.sender;
+        newInstance.tokenAddress = _tokenAddress;
+        newInstance.totalAmounts = new uint256[](_numOptions);
+
+        for (uint8 i = 0; i < _numOptions; i++) {
+            newInstance.options.push(_optionNames[i]);
+        }
+
+        emit BetInstanceCreated(msg.sender, betId, _title, _optionNames, _minimumBetAmount, _tokenAddress);
     }
 
-    BetInstance storage newInstance = betInstances[_betId];
-    newInstance.id = _betId;
-    newInstance.minimumBetAmount = _minimumBetAmount;
-    newInstance.creator = msg.sender;
-    newInstance.tokenAddress = _tokenAddress;
-    newInstance.totalAmounts = new uint256[](_numOptions);
-
-    // Copiamos manualmente los nombres de las opciones del array de calldata al array de storage
-    for (uint8 i = 0; i < _numOptions; i++) {
-        newInstance.options.push(_optionNames[i]);
-    }
-
-    emit BetInstanceCreated(msg.sender, _betId, _optionNames, _minimumBetAmount, _tokenAddress);
-}
-
-    function placeBet(string calldata _betId, uint256 _amount, uint8 _option) external {
+    function placeBet(uint256 _betId, uint256 _amount, uint8 _option) external {
         BetInstance storage betInstance = betInstances[_betId];
         require(!betInstance.isClosed, "Betting is closed");
         require(_amount >= betInstance.minimumBetAmount, "Bet amount is less than minimum");
@@ -89,13 +94,13 @@ contract Wagerly {
         emit BetPlaced(_betId, msg.sender, _amount, _option);
     }
 
-    function closeBetting(string calldata _betId) external onlyCreator(_betId) {
+    function closeBetting(uint256 _betId) external onlyCreator(_betId) {
         BetInstance storage betInstance = betInstances[_betId];
         betInstance.isClosed = true;
         emit BettingClosed(_betId);
     }
 
-    function distributeWinnings(string calldata _betId, uint8 _winningOption) external onlyCreator(_betId) {
+    function distributeWinnings(uint256 _betId, uint8 _winningOption) external onlyCreator(_betId) {
         require(_winningOption >= 1 && _winningOption <= betInstances[_betId].options.length, "Invalid winning option");
 
         BetInstance storage betInstance = betInstances[_betId];
@@ -136,7 +141,7 @@ contract Wagerly {
         emit BettingResolved(_betId, _winningOption);
     }
 
-    function cancelBet(string calldata _betId) external onlyCreator(_betId) {
+    function cancelBet(uint256 _betId) external onlyCreator(_betId) {
         BetInstance storage betInstance = betInstances[_betId];
         require(!betInstance.isResolved, "Betting already resolved");
 
@@ -167,8 +172,9 @@ contract Wagerly {
         emit BetCancelled(_betId);
     }
 
-    function getBetInfo(string calldata _betId) external view returns (
+    function getBetInfo(uint256 _betId) external view returns (
         address creator,
+        string memory title,  
         string[] memory options,
         bool isClosed,
         bool isResolved,
@@ -180,6 +186,7 @@ contract Wagerly {
         BetInstance storage betInstance = betInstances[_betId];
 
         creator = betInstance.creator;
+        title = betInstance.title;    
         options = betInstance.options;
         isClosed = betInstance.isClosed;
         isResolved = betInstance.isResolved;
@@ -196,6 +203,7 @@ contract Wagerly {
 
         return (
             creator,
+            title,
             options,
             isClosed,
             isResolved,
