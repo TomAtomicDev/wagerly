@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import "@chainlink/contracts/src/v0.8/AutomationCompatible.sol";
+
 interface IERC20 {
     function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
     function transfer(address recipient, uint256 amount) external returns (bool);
     function balanceOf(address account) external view returns (uint256);
 }
 
-contract Wagerly {
+contract Wagerly is AutomationCompatible {
     address private constant FEE_ADDRESS = 0x9b63FA365019Dd7bdF8cBED2823480F808391970;
     uint256 private nextBetId = 1;
+    uint256 private constant DISTRIBUTION_DELAY = 5 minutes;
 
     struct Bet {
         address bettor;
@@ -29,7 +32,6 @@ contract Wagerly {
         bool isClosed;
         bool isResolved;
         uint8 winningOption;
-        uint256 closingTime; // Tiempo en el que se cierran las apuestas
         uint256 distributionTime; // Tiempo en el que se debe distribuir el premio
     }
 
@@ -98,15 +100,34 @@ contract Wagerly {
         emit BettingClosed(_betId);
     }
 
-    function distributeWinnings(uint256 _betId) external onlyCreator(_betId) {
+    function distributeWinnings(uint256 _betId, uint8 _winningOption) external onlyCreator(_betId) {
         BetInstance storage betInstance = betInstances[_betId];
         require(betInstance.isClosed && !betInstance.isResolved, "Betting must be closed and not resolved");
-        require(block.timestamp >= betInstance.distributionTime, "Distribution time not reached yet");
+        require(_winningOption >= 1 && _winningOption <= betInstance.options.length, "Invalid winning option");
 
         betInstance.isResolved = true;
-        betInstance.winningOption = betInstance.winningOption; // Aquí debería definir el valor de winningOption
+        betInstance.winningOption = _winningOption;
+        betInstance.distributionTime = block.timestamp + DISTRIBUTION_DELAY;
 
-        _distributeWinnings(_betId);
+        emit BettingResolved(_betId, _winningOption);
+    }
+
+    function checkUpkeep(bytes calldata) external view override returns (bool upkeepNeeded, bytes memory performData) {
+        for (uint256 betId = 1; betId < nextBetId; betId++) {
+            BetInstance storage betInstance = betInstances[betId];
+            if (betInstance.isResolved && !betInstance.isClosed && block.timestamp >= betInstance.distributionTime) {
+                return (true, abi.encode(betId));
+            }
+        }
+        return (false, "");
+    }
+
+    function performUpkeep(bytes calldata performData) external override {
+        (uint256 betId) = abi.decode(performData, (uint256));
+        BetInstance storage betInstance = betInstances[betId];
+        if (betInstance.isResolved && !betInstance.isClosed && block.timestamp >= betInstance.distributionTime) {
+            _distributeWinnings(betId);
+        }
     }
 
     function _distributeWinnings(uint256 _betId) internal {
@@ -180,7 +201,6 @@ contract Wagerly {
         uint256[] memory totalAmounts,
         address tokenAddress,
         uint8 winningOption,
-        uint256 closingTime,
         uint256 distributionTime
     ) {
         BetInstance storage betInstance = betInstances[_betId];
@@ -196,7 +216,6 @@ contract Wagerly {
         totalAmounts = betInstance.totalAmounts;
         tokenAddress = betInstance.tokenAddress;
         winningOption = betInstance.winningOption;
-        closingTime = betInstance.closingTime;
         distributionTime = betInstance.distributionTime;
     }
 }
