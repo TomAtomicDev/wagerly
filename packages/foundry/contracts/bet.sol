@@ -9,7 +9,7 @@ interface IERC20 {
 
 contract Wagerly {
     address private constant FEE_ADDRESS = 0x9b63FA365019Dd7bdF8cBED2823480F808391970;
-    uint256 private nextBetId = 1;
+    uint256 private nextBetId = 1;  
 
     struct Bet {
         address bettor;
@@ -18,19 +18,17 @@ contract Wagerly {
 
     struct BetInstance {
         uint256 id;
-        string title;
-        string[] options;
-        uint256[] totalAmounts;
+        string title;           
+        string[] options;  
+        uint256[] totalAmounts; 
         uint256 minimumBetAmount;
         address tokenAddress;
-        mapping(address => Bet[]) bets;
+        mapping(address => Bet[]) bets;  
         address[] bettors;
         address creator;
         bool isClosed;
         bool isResolved;
         uint8 winningOption;
-        uint256 closingTime; // Tiempo en el que se cierran las apuestas
-        uint256 distributionTime; // Tiempo en el que se debe distribuir el premio
     }
 
     mapping(uint256 => BetInstance) private betInstances;
@@ -40,15 +38,16 @@ contract Wagerly {
     event BettingClosed(uint256 indexed betId);
     event BettingResolved(uint256 indexed betId, uint8 winningOption);
     event BetCancelled(uint256 indexed betId);
-    event WinningsDistributed(uint256 indexed betId);
 
     modifier onlyCreator(uint256 _betId) {
-        require(msg.sender == betInstances[_betId].creator, "Not authorized");
+        if (msg.sender != betInstances[_betId].creator) {
+            revert("Not authorized");
+        }
         _;
     }
 
     function createBetInstance(
-        string calldata _title,
+        string calldata _title,      
         uint8 _numOptions,
         string[] calldata _optionNames,
         uint256 _minimumBetAmount,
@@ -60,9 +59,13 @@ contract Wagerly {
         uint256 betId = nextBetId; 
         nextBetId++; 
 
+        if (betInstances[betId].creator != address(0)) {
+            revert("Bet instance with this ID already exists");
+        }
+
         BetInstance storage newInstance = betInstances[betId];
         newInstance.id = betId;
-        newInstance.title = _title;
+        newInstance.title = _title;        
         newInstance.minimumBetAmount = _minimumBetAmount;
         newInstance.creator = msg.sender;
         newInstance.tokenAddress = _tokenAddress;
@@ -93,24 +96,15 @@ contract Wagerly {
 
     function closeBetting(uint256 _betId) external onlyCreator(_betId) {
         BetInstance storage betInstance = betInstances[_betId];
-        require(!betInstance.isClosed, "Betting is already closed");
         betInstance.isClosed = true;
         emit BettingClosed(_betId);
     }
 
-    function distributeWinnings(uint256 _betId) external onlyCreator(_betId) {
+    function distributeWinnings(uint256 _betId, uint8 _winningOption) external onlyCreator(_betId) {
+        require(_winningOption >= 1 && _winningOption <= betInstances[_betId].options.length, "Invalid winning option");
+
         BetInstance storage betInstance = betInstances[_betId];
         require(betInstance.isClosed && !betInstance.isResolved, "Betting must be closed and not resolved");
-        require(block.timestamp >= betInstance.distributionTime, "Distribution time not reached yet");
-
-        betInstance.isResolved = true;
-        betInstance.winningOption = betInstance.winningOption; // Aquí debería definir el valor de winningOption
-
-        _distributeWinnings(_betId);
-    }
-
-    function _distributeWinnings(uint256 _betId) internal {
-        BetInstance storage betInstance = betInstances[_betId];
 
         IERC20 token = IERC20(betInstance.tokenAddress);
 
@@ -118,25 +112,33 @@ contract Wagerly {
         for (uint8 i = 0; i < betInstance.totalAmounts.length; i++) {
             totalAmountToDistribute += betInstance.totalAmounts[i];
         }
-        uint256 totalAmountWinningOption = betInstance.totalAmounts[betInstance.winningOption - 1];
+        uint256 totalAmountWinningOption = betInstance.totalAmounts[_winningOption - 1];
 
         uint256 fee = totalAmountToDistribute / 100;
         uint256 creatorFee = fee;
         uint256 remainingAmount = totalAmountToDistribute - fee - creatorFee;
-
+        
         require(token.transfer(FEE_ADDRESS, fee), "Fee transfer failed");
         require(token.transfer(betInstance.creator, creatorFee), "Creator fee transfer failed");
 
-        for (uint256 i = 0; i < betInstance.bettors.length; i++) {
-            address bettor = betInstance.bettors[i];
-            Bet[] storage bets = betInstance.bets[bettor];
-            for (uint8 j = 0; j < bets.length; j++) {
-                uint256 amountToTransfer = (bets[j].amount * remainingAmount) / totalAmountWinningOption;
-                require(token.transfer(bettor, amountToTransfer), "Winner transfer failed");
+        if (betInstance.bettors.length == 0) {
+            revert("No bets placed");
+        } else {
+            for (uint256 i = 0; i < betInstance.bettors.length; i++) {
+                address bettor = betInstance.bettors[i];
+                Bet[] storage bets = betInstance.bets[bettor];
+                for (uint8 j = 0; j < bets.length; j++) {
+                    if (bets[j].bettor != address(0)) {
+                        uint256 amountToTransfer = (bets[j].amount * remainingAmount) / totalAmountWinningOption;
+                        require(token.transfer(bettor, amountToTransfer), "Winner transfer failed");
+                    }
+                }
             }
         }
 
-        emit WinningsDistributed(_betId);
+        betInstance.isResolved = true;
+        betInstance.winningOption = _winningOption;
+        emit BettingResolved(_betId, _winningOption);
     }
 
     function cancelBet(uint256 _betId) external onlyCreator(_betId) {
@@ -153,7 +155,7 @@ contract Wagerly {
         uint256 fee = totalAmountToDistribute / 100;
         uint256 creatorFee = fee;
         uint256 remainingAmount = totalAmountToDistribute - fee - creatorFee;
-
+        
         require(token.transfer(FEE_ADDRESS, fee), "Fee transfer failed");
         require(token.transfer(betInstance.creator, creatorFee), "Creator fee transfer failed");
 
@@ -172,31 +174,43 @@ contract Wagerly {
 
     function getBetInfo(uint256 _betId) external view returns (
         address creator,
-        string memory title,
+        string memory title,         
         string[] memory options,
         bool isClosed,
         bool isResolved,
         uint256 totalAmountBet,
         uint256[] memory totalAmounts,
         address tokenAddress,
-        uint8 winningOption,
-        uint256 closingTime,
-        uint256 distributionTime
+        uint8 winningOption
     ) {
         BetInstance storage betInstance = betInstances[_betId];
+
         creator = betInstance.creator;
-        title = betInstance.title;
+        title = betInstance.title;          
         options = betInstance.options;
         isClosed = betInstance.isClosed;
         isResolved = betInstance.isResolved;
+
+        totalAmounts = new uint256[](betInstance.totalAmounts.length);
         totalAmountBet = 0;
         for (uint8 i = 0; i < betInstance.totalAmounts.length; i++) {
+            totalAmounts[i] = betInstance.totalAmounts[i];
             totalAmountBet += betInstance.totalAmounts[i];
         }
-        totalAmounts = betInstance.totalAmounts;
+
         tokenAddress = betInstance.tokenAddress;
-        winningOption = betInstance.winningOption;
-        closingTime = betInstance.closingTime;
-        distributionTime = betInstance.distributionTime;
+        winningOption = betInstance.isResolved ? betInstance.winningOption : 0;
+
+        return (
+            creator,
+            title,
+            options,
+            isClosed,
+            isResolved,
+            totalAmountBet,
+            totalAmounts,
+            tokenAddress,
+            winningOption
+        );
     }
 }
