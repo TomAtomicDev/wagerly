@@ -1,0 +1,543 @@
+{
+	"compiler": {
+		"version": "0.8.26+commit.8a97fa7a"
+	},
+	"language": "Solidity",
+	"output": {
+		"abi": [
+			{
+				"inputs": [],
+				"stateMutability": "nonpayable",
+				"type": "constructor"
+			},
+			{
+				"anonymous": false,
+				"inputs": [
+					{
+						"indexed": true,
+						"internalType": "uint256",
+						"name": "betId",
+						"type": "uint256"
+					}
+				],
+				"name": "BetCancelled",
+				"type": "event"
+			},
+			{
+				"anonymous": false,
+				"inputs": [
+					{
+						"indexed": false,
+						"internalType": "address",
+						"name": "creator",
+						"type": "address"
+					},
+					{
+						"indexed": true,
+						"internalType": "uint256",
+						"name": "betId",
+						"type": "uint256"
+					},
+					{
+						"indexed": false,
+						"internalType": "string",
+						"name": "title",
+						"type": "string"
+					},
+					{
+						"indexed": false,
+						"internalType": "string[]",
+						"name": "options",
+						"type": "string[]"
+					},
+					{
+						"indexed": false,
+						"internalType": "uint256",
+						"name": "minimumBetAmount",
+						"type": "uint256"
+					},
+					{
+						"indexed": false,
+						"internalType": "address",
+						"name": "tokenAddress",
+						"type": "address"
+					}
+				],
+				"name": "BetInstanceCreated",
+				"type": "event"
+			},
+			{
+				"anonymous": false,
+				"inputs": [
+					{
+						"indexed": true,
+						"internalType": "uint256",
+						"name": "betId",
+						"type": "uint256"
+					},
+					{
+						"indexed": true,
+						"internalType": "address",
+						"name": "bettor",
+						"type": "address"
+					},
+					{
+						"indexed": false,
+						"internalType": "uint256",
+						"name": "amount",
+						"type": "uint256"
+					},
+					{
+						"indexed": false,
+						"internalType": "uint8",
+						"name": "option",
+						"type": "uint8"
+					}
+				],
+				"name": "BetPlaced",
+				"type": "event"
+			},
+			{
+				"anonymous": false,
+				"inputs": [
+					{
+						"indexed": true,
+						"internalType": "uint256",
+						"name": "betId",
+						"type": "uint256"
+					}
+				],
+				"name": "BettingClosed",
+				"type": "event"
+			},
+			{
+				"anonymous": false,
+				"inputs": [
+					{
+						"indexed": true,
+						"internalType": "uint256",
+						"name": "betId",
+						"type": "uint256"
+					},
+					{
+						"indexed": false,
+						"internalType": "uint8",
+						"name": "winningOption",
+						"type": "uint8"
+					}
+				],
+				"name": "BettingResolved",
+				"type": "event"
+			},
+			{
+				"anonymous": false,
+				"inputs": [
+					{
+						"indexed": true,
+						"internalType": "uint256",
+						"name": "betId",
+						"type": "uint256"
+					},
+					{
+						"indexed": false,
+						"internalType": "uint256",
+						"name": "distributionTime",
+						"type": "uint256"
+					}
+				],
+				"name": "DistributionScheduled",
+				"type": "event"
+			},
+			{
+				"inputs": [
+					{
+						"internalType": "uint256",
+						"name": "_betId",
+						"type": "uint256"
+					}
+				],
+				"name": "cancelBet",
+				"outputs": [],
+				"stateMutability": "nonpayable",
+				"type": "function"
+			},
+			{
+				"inputs": [
+					{
+						"internalType": "bytes",
+						"name": "",
+						"type": "bytes"
+					}
+				],
+				"name": "checkUpkeep",
+				"outputs": [
+					{
+						"internalType": "bool",
+						"name": "upkeepNeeded",
+						"type": "bool"
+					},
+					{
+						"internalType": "bytes",
+						"name": "performData",
+						"type": "bytes"
+					}
+				],
+				"stateMutability": "view",
+				"type": "function"
+			},
+			{
+				"inputs": [
+					{
+						"internalType": "uint256",
+						"name": "_betId",
+						"type": "uint256"
+					}
+				],
+				"name": "closeBetting",
+				"outputs": [],
+				"stateMutability": "nonpayable",
+				"type": "function"
+			},
+			{
+				"inputs": [
+					{
+						"internalType": "string",
+						"name": "_title",
+						"type": "string"
+					},
+					{
+						"internalType": "uint8",
+						"name": "_numOptions",
+						"type": "uint8"
+					},
+					{
+						"internalType": "string[]",
+						"name": "_optionNames",
+						"type": "string[]"
+					},
+					{
+						"internalType": "uint256",
+						"name": "_minimumBetAmount",
+						"type": "uint256"
+					},
+					{
+						"internalType": "address",
+						"name": "_tokenAddress",
+						"type": "address"
+					}
+				],
+				"name": "createBetInstance",
+				"outputs": [],
+				"stateMutability": "nonpayable",
+				"type": "function"
+			},
+			{
+				"inputs": [
+					{
+						"internalType": "uint256",
+						"name": "_betId",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint8",
+						"name": "_winningOption",
+						"type": "uint8"
+					}
+				],
+				"name": "distributeWinnings",
+				"outputs": [],
+				"stateMutability": "nonpayable",
+				"type": "function"
+			},
+			{
+				"inputs": [],
+				"name": "getAllOpenBets",
+				"outputs": [
+					{
+						"internalType": "uint256[]",
+						"name": "openBetIds",
+						"type": "uint256[]"
+					},
+					{
+						"internalType": "string[]",
+						"name": "titles",
+						"type": "string[]"
+					},
+					{
+						"internalType": "string[][]",
+						"name": "options",
+						"type": "string[][]"
+					},
+					{
+						"internalType": "uint256[]",
+						"name": "minimumBetAmounts",
+						"type": "uint256[]"
+					},
+					{
+						"internalType": "address[]",
+						"name": "creators",
+						"type": "address[]"
+					}
+				],
+				"stateMutability": "view",
+				"type": "function"
+			},
+			{
+				"inputs": [
+					{
+						"internalType": "uint256",
+						"name": "_betId",
+						"type": "uint256"
+					}
+				],
+				"name": "getBetInfo",
+				"outputs": [
+					{
+						"internalType": "address",
+						"name": "creator",
+						"type": "address"
+					},
+					{
+						"internalType": "string",
+						"name": "title",
+						"type": "string"
+					},
+					{
+						"internalType": "string[]",
+						"name": "options",
+						"type": "string[]"
+					},
+					{
+						"internalType": "bool",
+						"name": "isClosed",
+						"type": "bool"
+					},
+					{
+						"internalType": "bool",
+						"name": "isResolved",
+						"type": "bool"
+					},
+					{
+						"internalType": "uint256",
+						"name": "totalAmountBet",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256[]",
+						"name": "totalAmounts",
+						"type": "uint256[]"
+					},
+					{
+						"internalType": "address",
+						"name": "tokenAddress",
+						"type": "address"
+					},
+					{
+						"internalType": "uint8",
+						"name": "winningOption",
+						"type": "uint8"
+					}
+				],
+				"stateMutability": "view",
+				"type": "function"
+			},
+			{
+				"inputs": [
+					{
+						"internalType": "address",
+						"name": "_bettor",
+						"type": "address"
+					}
+				],
+				"name": "getOpenBetsByAddress",
+				"outputs": [
+					{
+						"internalType": "uint256[]",
+						"name": "openBetIds",
+						"type": "uint256[]"
+					},
+					{
+						"internalType": "string[]",
+						"name": "titles",
+						"type": "string[]"
+					},
+					{
+						"internalType": "uint256[]",
+						"name": "amounts",
+						"type": "uint256[]"
+					},
+					{
+						"internalType": "string[][]",
+						"name": "options",
+						"type": "string[][]"
+					}
+				],
+				"stateMutability": "view",
+				"type": "function"
+			},
+			{
+				"inputs": [
+					{
+						"internalType": "uint256",
+						"name": "_betId",
+						"type": "uint256"
+					}
+				],
+				"name": "isBetPaid",
+				"outputs": [
+					{
+						"internalType": "bool",
+						"name": "",
+						"type": "bool"
+					}
+				],
+				"stateMutability": "view",
+				"type": "function"
+			},
+			{
+				"inputs": [
+					{
+						"internalType": "uint256",
+						"name": "_betId",
+						"type": "uint256"
+					}
+				],
+				"name": "isPaymentProcessing",
+				"outputs": [
+					{
+						"internalType": "bool",
+						"name": "",
+						"type": "bool"
+					}
+				],
+				"stateMutability": "view",
+				"type": "function"
+			},
+			{
+				"inputs": [],
+				"name": "owner",
+				"outputs": [
+					{
+						"internalType": "address",
+						"name": "",
+						"type": "address"
+					}
+				],
+				"stateMutability": "view",
+				"type": "function"
+			},
+			{
+				"inputs": [
+					{
+						"internalType": "uint256",
+						"name": "_betId",
+						"type": "uint256"
+					}
+				],
+				"name": "ownerCancelBet",
+				"outputs": [],
+				"stateMutability": "nonpayable",
+				"type": "function"
+			},
+			{
+				"inputs": [
+					{
+						"internalType": "bytes",
+						"name": "performData",
+						"type": "bytes"
+					}
+				],
+				"name": "performUpkeep",
+				"outputs": [],
+				"stateMutability": "nonpayable",
+				"type": "function"
+			},
+			{
+				"inputs": [
+					{
+						"internalType": "uint256",
+						"name": "_betId",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
+						"name": "_amount",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint8",
+						"name": "_option",
+						"type": "uint8"
+					}
+				],
+				"name": "placeBet",
+				"outputs": [],
+				"stateMutability": "nonpayable",
+				"type": "function"
+			}
+		],
+		"devdoc": {
+			"kind": "dev",
+			"methods": {
+				"performUpkeep(bytes)": {
+					"details": "The input to this method should not be trusted, and the caller of the method should not even be restricted to any single registry. Anyone should be able call it, and the input should be validated, there is no guarantee that the data passed in is the performData returned from checkUpkeep. This could happen due to malicious keepers, racing keepers, or simply a state change while the performUpkeep transaction is waiting for confirmation. Always validate the data passed in.",
+					"params": {
+						"performData": "is the data which was passed back from the checkData simulation. If it is encoded, it can easily be decoded into other types by calling `abi.decode`. This data should not be trusted, and should be validated against the contract's current state."
+					}
+				}
+			},
+			"version": 1
+		},
+		"userdoc": {
+			"kind": "user",
+			"methods": {
+				"performUpkeep(bytes)": {
+					"notice": "method that is actually executed by the keepers, via the registry. The data returned by the checkUpkeep simulation will be passed into this method to actually be executed."
+				}
+			},
+			"version": 1
+		}
+	},
+	"settings": {
+		"compilationTarget": {
+			"packages/chainlink_smart_contracts/bet_users_chainlink.sol": "WagerlyUsers"
+		},
+		"evmVersion": "cancun",
+		"libraries": {},
+		"metadata": {
+			"bytecodeHash": "ipfs"
+		},
+		"optimizer": {
+			"enabled": false,
+			"runs": 200
+		},
+		"remappings": []
+	},
+	"sources": {
+		"@chainlink/contracts/src/v0.8/interfaces/AutomationCompatibleInterface.sol": {
+			"keccak256": "0x67076747c6f66d8d43472a56e72879c350056bff82e069addaf9064922863340",
+			"license": "MIT",
+			"urls": [
+				"bzz-raw://b738dba680a6fbc4afc85819743f13f5b7f4790ec8634c9894e1160327b11b6e",
+				"dweb:/ipfs/Qmbv3euvQppeBm2g61khcJSRMZWi78xUWzbnjKAvDBnka4"
+			]
+		},
+		"@chainlink/contracts/src/v0.8/interfaces/KeeperCompatibleInterface.sol": {
+			"keccak256": "0xac76a31c20c6d66196247376d113a0f19229569ab8c123989649d50be3333e0a",
+			"license": "MIT",
+			"urls": [
+				"bzz-raw://5400532a5132536ba3d1172604291298f1595f15d7a7f66c95bf89a5823b80be",
+				"dweb:/ipfs/QmTvDMmt73kZEGjD9WVgpaN8xLsgGpoXmr2yVUQoQuv8GW"
+			]
+		},
+		"packages/chainlink_smart_contracts/bet_users_chainlink.sol": {
+			"keccak256": "0xbc9e9f9a83c91b39ea17580cb6cc14239f2c3e2cb91b366426df01c746c945b1",
+			"license": "MIT",
+			"urls": [
+				"bzz-raw://4f3a1bd5bd8f39f0a5829c8fe9aa292f49eb058eee2f62c8cc70183d0c7fab1c",
+				"dweb:/ipfs/QmPx5cwK2wiDeDYZ87o8zELT8fx3ACmCPoHJ3UF2aA4D5F"
+			]
+		}
+	},
+	"version": 1
+}
