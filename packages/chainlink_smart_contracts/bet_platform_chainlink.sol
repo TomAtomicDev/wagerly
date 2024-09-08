@@ -7,7 +7,7 @@ interface IERC20 {
     function balanceOf(address account) external view returns (uint256);
 }
 
-contract Wagerly {
+contract WagerlyPlatform {
     // The owner of the contract
     address public owner;
     
