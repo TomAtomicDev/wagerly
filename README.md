@@ -98,4 +98,4 @@ Link: https://sepolia.etherscan.io/address/0xEE185AB9e02323F86eDabE3Fc558FED8Ec7
 These improvements aim to create a smoother, more personalized, and socially engaging experience where users can easily connect with bets they find interesting and share the experience with their community 🌐🎉.
 
 ## Review our Demo 🎥
-[Demo Wagerly](https://youtu.be/kUj86SOrcfE)
+[Demo Wagerly](https://www.youtube.com/watch?v=kUj86SOrcfE)
