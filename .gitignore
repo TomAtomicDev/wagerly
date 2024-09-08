@@ -11,6 +11,8 @@ node_modules
 
 # eslint
 .eslintcache
+.cursorignore
+demo-kinto-app
 
 # misc
 .DS_Store

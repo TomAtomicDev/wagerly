@@ -82,6 +82,15 @@ module.exports = {
       animation: {
         "pulse-fast": "pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite",
       },
+      textColor: {
+        primary: "#100B5C",
+        secondary: "#4610DE",
+      },
+      backgroundColor: {
+        "custom-blue": "#13C2D3",
+        "custom-blue-dark": "#0FA5B3",
+        "custom-blue-light": "#D3F4F8",
+      },
     },
   },
 };
