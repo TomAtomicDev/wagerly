@@ -8,38 +8,51 @@ interface IERC20 {
 }
 
 contract WagerlyKinto {
+    // Owner of the contract
+    address public owner;
+
+    // Kinto Token address (used for all bets)
+    address public constant KINTO_TOKEN_ADDRESS = 0x010700808D59d2bb92257fCafACfe8e5bFF7aB87;
+
+    // Fee address where 1% of the total bet will be sent
     address private constant FEE_ADDRESS = 0x9b63FA365019Dd7bdF8cBED2823480F808391970;
-    uint256 private nextBetId = 1;  
 
+    // Keeps track of the next bet ID
+    uint256 private nextBetId = 1;
+
+    // Struct to store information about individual bets
     struct Bet {
-        address bettor;
-        uint256 amount;
+        address bettor;  // Address of the person who placed the bet
+        uint256 amount;  // Amount they bet
     }
 
+    // Struct to store information about a betting instance
     struct BetInstance {
-        uint256 id;
-        string title;           
-        string[] options;  
-        uint256[] totalAmounts; 
-        uint256 minimumBetAmount;
-        address tokenAddress;
-        mapping(address => Bet[]) bets;  
-        address[] bettors;
-        address creator;
-        bool isOpen;
-        bool isResolved;
-        uint8 winningOption;
-        bool isCanceled;
+        uint256 id;  // Bet ID
+        string title;  // Title of the bet (e.g., "Team A vs Team B")
+        string[] options;  // List of available options to bet on
+        uint256[] totalAmounts;  // Total amounts bet on each option
+        uint256 minimumBetAmount;  // Minimum amount to place a bet
+        mapping(address => Bet[]) bets;  // Mapping from bettor's address to their bets
+        address[] bettors;  // List of addresses of bettors
+        address creator;  // Address of the person who created the bet instance
+        bool isOpen;  // Whether betting is still open
+        bool isResolved;  // Whether the bet has been resolved
+        uint8 winningOption;  // The winning option (1-based index)
+        bool isCanceled;  // Whether the bet has been canceled
     }
 
+    // Mapping to store all bet instances by ID
     mapping(uint256 => BetInstance) private betInstances;
 
-    event BetInstanceCreated(address creator, uint256 indexed betId, string title, string[] options, uint256 minimumBetAmount, address tokenAddress);
+    // Events
+    event BetInstanceCreated(address creator, uint256 indexed betId, string title, string[] options, uint256 minimumBetAmount);
     event BetPlaced(uint256 indexed betId, address indexed bettor, uint256 amount, uint8 option);
     event BettingClosed(uint256 indexed betId);
     event BettingResolved(uint256 indexed betId, uint8 winningOption);
     event BetCancelled(uint256 indexed betId);
 
+    // Modifier to restrict actions to the creator of the bet instance
     modifier onlyCreator(uint256 _betId) {
         if (msg.sender != betInstances[_betId].creator) {
             revert("Not authorized");
@@ -47,107 +60,127 @@ contract WagerlyKinto {
         _;
     }
 
+    // Modifier to restrict actions to the owner of the contract
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Not authorized, only owner can create bets");
+        _;
+    }
+
+    // Constructor: Initializes the owner as the person who deployed the contract
+    constructor() {
+        owner = msg.sender;
+    }
+
+    // Function to create a new bet instance (only the owner can call this)
     function createBetInstance(
-        string calldata _title,  
-        uint8 _numOptions, 
+        string calldata _title,
+        uint8 _numOptions,
         string[] calldata _optionNames,
-        uint256 _minimumBetAmount,
-        address _tokenAddress
-    ) external {
+        uint256 _minimumBetAmount
+    ) external onlyOwner {  // Only the owner can create bet instances
         require(_numOptions >= 2 && _numOptions <= 5, "Invalid number of options");
         require(_optionNames.length == _numOptions, "Option names length mismatch");
 
-        uint256 betId = nextBetId; 
-        nextBetId++; 
+        uint256 betId = nextBetId;
+        nextBetId++;  // Increment the bet ID for the next bet
 
-        if (betInstances[betId].creator != address(0)) {
-            revert("Bet instance with this ID already exists");
-        }
-
+        // Create the new bet instance
         BetInstance storage newInstance = betInstances[betId];
         newInstance.id = betId;
-        newInstance.title = _title;        
+        newInstance.title = _title;
         newInstance.minimumBetAmount = _minimumBetAmount;
-        newInstance.creator = msg.sender;
-        newInstance.tokenAddress = _tokenAddress;
+        newInstance.creator = msg.sender;  // Owner will be the creator of this bet
         newInstance.totalAmounts = new uint256[](_numOptions);
 
+        // Set up the available options for this bet
         for (uint8 i = 0; i < _numOptions; i++) {
             newInstance.options.push(_optionNames[i]);
         }
 
-        emit BetInstanceCreated(msg.sender, betId, _title, _optionNames, _minimumBetAmount, _tokenAddress);
+        // Emit event that a bet instance was created
+        emit BetInstanceCreated(msg.sender, betId, _title, _optionNames, _minimumBetAmount);
     }
 
+    // Function to place a bet on a given bet instance
     function placeBet(uint256 _betId, uint256 _amount, uint8 _option) external {
         BetInstance storage betInstance = betInstances[_betId];
         require(betInstance.isOpen, "Betting is closed");
         require(_amount >= betInstance.minimumBetAmount, "Bet amount is less than minimum");
         require(_option >= 1 && _option <= betInstance.options.length, "Invalid option");
 
-        IERC20 token = IERC20(betInstance.tokenAddress);
+        // Transfer the bet amount from the bettor's account to the contract using the Kinto Token
+        IERC20 token = IERC20(KINTO_TOKEN_ADDRESS);
         require(token.transferFrom(msg.sender, address(this), _amount), "Transfer failed");
 
+        // Update the total amount for the selected option
         betInstance.totalAmounts[_option - 1] += _amount;
         betInstance.bets[msg.sender].push(Bet(msg.sender, _amount));
         betInstance.bettors.push(msg.sender);
 
+        // Emit event that a bet was placed
         emit BetPlaced(_betId, msg.sender, _amount, _option);
     }
 
+    // Function to close betting on a given bet instance (only creator can call this)
     function closeBetting(uint256 _betId) external onlyCreator(_betId) {
         BetInstance storage betInstance = betInstances[_betId];
-        betInstance.isOpen = false;
+        betInstance.isOpen = false;  // Mark the bet as closed
         emit BettingClosed(_betId);
     }
 
+    // Function to distribute winnings after the bet is resolved
     function distributeWinnings(uint256 _betId, uint8 _winningOption) external onlyCreator(_betId) {
         require(_winningOption >= 1 && _winningOption <= betInstances[_betId].options.length, "Invalid winning option");
 
         BetInstance storage betInstance = betInstances[_betId];
         require(!betInstance.isOpen && !betInstance.isResolved, "Betting must be closed and not resolved");
 
-        IERC20 token = IERC20(betInstance.tokenAddress);
+        // Get the Kinto Token contract for transferring funds
+        IERC20 token = IERC20(KINTO_TOKEN_ADDRESS);
 
+        // Calculate the total amount to distribute
         uint256 totalAmountToDistribute = 0;
         for (uint8 i = 0; i < betInstance.totalAmounts.length; i++) {
             totalAmountToDistribute += betInstance.totalAmounts[i];
         }
         uint256 totalAmountWinningOption = betInstance.totalAmounts[_winningOption - 1];
 
+        // Deduct a 1% fee and transfer to the fee address and creator
         uint256 fee = totalAmountToDistribute / 100;
         uint256 creatorFee = fee;
         uint256 remainingAmount = totalAmountToDistribute - fee - creatorFee;
-        
+
         require(token.transfer(FEE_ADDRESS, fee), "Fee transfer failed");
         require(token.transfer(betInstance.creator, creatorFee), "Creator fee transfer failed");
 
-        if (betInstance.bettors.length == 0) {
-            revert("No bets placed");
-        } else {
-            for (uint256 i = 0; i < betInstance.bettors.length; i++) {
-                address bettor = betInstance.bettors[i];
-                Bet[] storage bets = betInstance.bets[bettor];
-                for (uint8 j = 0; j < bets.length; j++) {
-                    if (bets[j].bettor != address(0)) {
-                        uint256 amountToTransfer = (bets[j].amount * remainingAmount) / totalAmountWinningOption;
-                        require(token.transfer(bettor, amountToTransfer), "Winner transfer failed");
-                    }
+        // Distribute the remaining amount to the winners
+        for (uint256 i = 0; i < betInstance.bettors.length; i++) {
+            address bettor = betInstance.bettors[i];
+            Bet[] storage bets = betInstance.bets[bettor];
+            for (uint8 j = 0; j < bets.length; j++) {
+                if (bets[j].bettor != address(0)) {
+                    uint256 amountToTransfer = (bets[j].amount * remainingAmount) / totalAmountWinningOption;
+                    require(token.transfer(bettor, amountToTransfer), "Winner transfer failed");
                 }
             }
         }
 
+        // Mark the bet as resolved
         betInstance.isResolved = true;
         betInstance.winningOption = _winningOption;
         emit BettingResolved(_betId, _winningOption);
     }
 
+    // Function to cancel the bet (only creator can call this, before it's resolved)
     function cancelBet(uint256 _betId) external onlyCreator(_betId) {
         BetInstance storage betInstance = betInstances[_betId];
         require(!betInstance.isResolved, "Betting already resolved");
         betInstance.isCanceled = true;
-        IERC20 token = IERC20(betInstance.tokenAddress);
 
+        // Get the Kinto Token contract for refunding the bettors
+        IERC20 token = IERC20(KINTO_TOKEN_ADDRESS);
+
+        // Refund the bettors their money minus the fee
         uint256 totalAmountToDistribute = 0;
         for (uint8 i = 0; i < betInstance.totalAmounts.length; i++) {
             totalAmountToDistribute += betInstance.totalAmounts[i];
@@ -156,10 +189,11 @@ contract WagerlyKinto {
         uint256 fee = totalAmountToDistribute / 100;
         uint256 creatorFee = fee;
         uint256 remainingAmount = totalAmountToDistribute - fee - creatorFee;
-        
+
         require(token.transfer(FEE_ADDRESS, fee), "Fee transfer failed");
         require(token.transfer(betInstance.creator, creatorFee), "Creator fee transfer failed");
 
+        // Refund all bettors
         for (uint256 i = 0; i < betInstance.bettors.length; i++) {
             address bettor = betInstance.bettors[i];
             Bet[] storage bets = betInstance.bets[bettor];
@@ -173,22 +207,22 @@ contract WagerlyKinto {
         emit BetCancelled(_betId);
     }
 
+    // Function to get information about a specific bet instance
     function getBetInfo(uint256 _betId) external view returns (
         address creator,
-        string memory title,         
+        string memory title,
         string[] memory options,
         bool isOpen,
         bool isResolved,
         uint256 totalAmountBet,
         uint256[] memory totalAmounts,
-        address tokenAddress,
         uint8 winningOption,
         bool isCanceled
     ) {
         BetInstance storage betInstance = betInstances[_betId];
 
         creator = betInstance.creator;
-        title = betInstance.title;          
+        title = betInstance.title;
         options = betInstance.options;
         isOpen = betInstance.isOpen;
         isResolved = betInstance.isResolved;
@@ -200,7 +234,6 @@ contract WagerlyKinto {
             totalAmountBet += betInstance.totalAmounts[i];
         }
 
-        tokenAddress = betInstance.tokenAddress;
         winningOption = betInstance.isResolved ? betInstance.winningOption : 0;
 
         return (
@@ -211,28 +244,29 @@ contract WagerlyKinto {
             isResolved,
             totalAmountBet,
             totalAmounts,
-            tokenAddress,
             winningOption,
             isCanceled
         );
     }
 
+    // Function to get all open bets placed by a specific bettor
     function getOpenBetsByAddress(address _bettor) external view returns (
-        uint256[] memory openBetIds, 
-        string[] memory titles, 
-        uint256[] memory amounts, 
+        uint256[] memory openBetIds,
+        string[] memory titles,
+        uint256[] memory amounts,
         string[][] memory options
     ) {
         uint256 openBetCount = 0;
 
+        // Count all open bets for the bettor
         for (uint256 i = 1; i < nextBetId; i++) {
             BetInstance storage betInstance = betInstances[i];
-            
             if (betInstance.isOpen && betInstance.bets[_bettor].length > 0) {
                 openBetCount++;
             }
         }
 
+        // Initialize arrays to store the results
         openBetIds = new uint256[](openBetCount);
         titles = new string[](openBetCount);
         amounts = new uint256[](openBetCount);
@@ -240,6 +274,7 @@ contract WagerlyKinto {
 
         uint256 index = 0;
 
+        // Populate the arrays with the open bet information
         for (uint256 i = 1; i < nextBetId; i++) {
             BetInstance storage betInstance = betInstances[i];
 
@@ -260,15 +295,17 @@ contract WagerlyKinto {
         }
     }
 
+    // Function to get all open bets across all bettors
     function getAllOpenBets() external view returns (
-        uint256[] memory openBetIds, 
-        string[] memory titles, 
-        string[][] memory options, 
-        uint256[] memory minimumBetAmounts, 
+        uint256[] memory openBetIds,
+        string[] memory titles,
+        string[][] memory options,
+        uint256[] memory minimumBetAmounts,
         address[] memory creators
     ) {
         uint256 openBetCount = 0;
 
+        // Count all open bets
         for (uint256 i = 1; i < nextBetId; i++) {
             BetInstance storage betInstance = betInstances[i];
             if (betInstance.isOpen) {
@@ -276,6 +313,7 @@ contract WagerlyKinto {
             }
         }
 
+        // Initialize arrays to store the results
         openBetIds = new uint256[](openBetCount);
         titles = new string[](openBetCount);
         options = new string[][](openBetCount);
@@ -284,6 +322,7 @@ contract WagerlyKinto {
 
         uint256 index = 0;
 
+        // Populate the arrays with the open bet information
         for (uint256 i = 1; i < nextBetId; i++) {
             BetInstance storage betInstance = betInstances[i];
 
@@ -298,5 +337,4 @@ contract WagerlyKinto {
             }
         }
     }
-
 }
