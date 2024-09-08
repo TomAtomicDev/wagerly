@@ -30,9 +30,11 @@ contract Wagerly is KeeperCompatibleInterface {
         address creator;
         bool isClosed;
         bool isResolved;
+        bool isProcessingPayment; // Nuevo booleano para indicar si el pago está en proceso
+        bool isPaid; // Nuevo booleano para indicar si la apuesta ya fue pagada
         uint8 winningOption;
-        uint256 distributionTime; 
-        bool isDistributionScheduled; 
+        uint256 distributionTime;
+        bool isDistributionScheduled;
     }
 
     mapping(uint256 => BetInstance) private betInstances;
@@ -107,13 +109,14 @@ contract Wagerly is KeeperCompatibleInterface {
         BetInstance storage betInstance = betInstances[_betId];
         require(_winningOption >= 1 && _winningOption <= betInstance.options.length, "Invalid winning option");
         require(betInstance.isClosed && !betInstance.isResolved, "Betting must be closed and not resolved");
-        
+
         betInstance.isResolved = true;
         betInstance.winningOption = _winningOption;
 
         // Programar la distribución en 24 horas
         betInstance.distributionTime = block.timestamp + 24 hours;
         betInstance.isDistributionScheduled = true;
+        betInstance.isProcessingPayment = true;  // Marcar que el pago está en proceso
 
         emit BettingResolved(_betId, _winningOption);
         emit DistributionScheduled(_betId, betInstance.distributionTime);
@@ -136,7 +139,7 @@ contract Wagerly is KeeperCompatibleInterface {
         uint256 fee = totalAmountToDistribute / 100;
         uint256 creatorFee = fee;
         uint256 remainingAmount = totalAmountToDistribute - fee - creatorFee;
-        
+
         require(token.transfer(FEE_ADDRESS, fee), "Fee transfer failed");
         require(token.transfer(betInstance.creator, creatorFee), "Creator fee transfer failed");
 
@@ -151,20 +154,21 @@ contract Wagerly is KeeperCompatibleInterface {
             }
         }
 
-        betInstance.isDistributionScheduled = false;
+        betInstance.isProcessingPayment = false; // Marcar que el pago ya no está en proceso
+        betInstance.isPaid = true; // Marcar que la apuesta ha sido pagada completamente
+        betInstance.isDistributionScheduled = false; // Finalizar el proceso de distribución
     }
 
     // Función necesaria para Chainlink Keepers
     function checkUpkeep(bytes calldata) external view override returns (bool upkeepNeeded, bytes memory performData) {
-    for (uint256 i = 1; i < nextBetId; i++) {
-        if (betInstances[i].isDistributionScheduled && block.timestamp >= betInstances[i].distributionTime) {
-            upkeepNeeded = true;
-            performData = abi.encode(i);
-            break;
+        for (uint256 i = 1; i < nextBetId; i++) {
+            if (betInstances[i].isDistributionScheduled && block.timestamp >= betInstances[i].distributionTime) {
+                upkeepNeeded = true;
+                performData = abi.encode(i);
+                break;
+            }
         }
     }
-}
-
 
     // Función necesaria para Chainlink Keepers
     function performUpkeep(bytes calldata performData) external override {
@@ -189,7 +193,7 @@ contract Wagerly is KeeperCompatibleInterface {
         uint256 fee = totalAmountToDistribute / 100;
         uint256 creatorFee = fee;
         uint256 remainingAmount = totalAmountToDistribute - fee - creatorFee;
-        
+
         require(token.transfer(FEE_ADDRESS, fee), "Fee transfer failed");
         require(token.transfer(betInstance.creator, creatorFee), "Creator fee transfer failed");
 
@@ -248,5 +252,103 @@ contract Wagerly is KeeperCompatibleInterface {
             winningOption
         );
     }
-    
+
+    // Verifica si una apuesta ya ha sido pagada
+    function isBetPaid(uint256 _betId) external view returns (bool) {
+        return betInstances[_betId].isPaid;
+    }
+
+    // Verifica si una apuesta está siendo procesada para el pago
+    function isPaymentProcessing(uint256 _betId) external view returns (bool) {
+        return betInstances[_betId].isProcessingPayment;
+    }
+
+    // Función para obtener todas las apuestas abiertas en las que ha participado una dirección específica
+    function getOpenBetsByAddress(address _bettor) external view returns (
+        uint256[] memory openBetIds, 
+        string[] memory titles, 
+        uint256[] memory amounts, 
+        string[][] memory options
+    ) {
+        uint256 openBetCount = 0;
+
+        // Primero, contamos cuántas apuestas abiertas tiene el usuario
+        for (uint256 i = 1; i < nextBetId; i++) {
+            BetInstance storage betInstance = betInstances[i];
+            if (!betInstance.isClosed && betInstance.bets[_bettor].length > 0) {
+                openBetCount++;
+            }
+        }
+
+        // Creamos los arreglos para almacenar la información
+        openBetIds = new uint256[](openBetCount);
+        titles = new string[](openBetCount);
+        amounts = new uint256[](openBetCount);
+        options = new string[][](openBetCount);
+
+        uint256 index = 0;
+
+        // Recorremos de nuevo para almacenar los datos
+        for (uint256 i = 1; i < nextBetId; i++) {
+            BetInstance storage betInstance = betInstances[i];
+
+            if (!betInstance.isClosed && betInstance.bets[_bettor].length > 0) {
+                openBetIds[index] = betInstance.id;
+                titles[index] = betInstance.title;
+
+                uint256 totalAmountBetByUser = 0;
+                Bet[] storage bets = betInstance.bets[_bettor];
+                for (uint256 j = 0; j < bets.length; j++) {
+                    totalAmountBetByUser += bets[j].amount;
+                }
+                amounts[index] = totalAmountBetByUser;
+                options[index] = betInstance.options;
+
+                index++;
+            }
+        }
+    }
+
+    // Función para obtener todas las apuestas abiertas
+    function getAllOpenBets() external view returns (
+        uint256[] memory openBetIds, 
+        string[] memory titles, 
+        string[][] memory options, 
+        uint256[] memory minimumBetAmounts, 
+        address[] memory creators
+    ) {
+        uint256 openBetCount = 0;
+
+        // Contamos cuántas apuestas abiertas hay
+        for (uint256 i = 1; i < nextBetId; i++) {
+            BetInstance storage betInstance = betInstances[i];
+            if (!betInstance.isClosed) {
+                openBetCount++;
+            }
+        }
+
+        // Inicializamos los arreglos para almacenar la información
+        openBetIds = new uint256[](openBetCount);
+        titles = new string[](openBetCount);
+        options = new string[][](openBetCount);
+        minimumBetAmounts = new uint256[](openBetCount);
+        creators = new address[](openBetCount);
+
+        uint256 index = 0;
+
+        // Recorremos de nuevo para almacenar la información de las apuestas abiertas
+        for (uint256 i = 1; i < nextBetId; i++) {
+            BetInstance storage betInstance = betInstances[i];
+
+            if (!betInstance.isClosed) {
+                openBetIds[index] = betInstance.id;
+                titles[index] = betInstance.title;
+                options[index] = betInstance.options;
+                minimumBetAmounts[index] = betInstance.minimumBetAmount;
+                creators[index] = betInstance.creator;
+
+                index++;
+            }
+        }
+    }
 }
