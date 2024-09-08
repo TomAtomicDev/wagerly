@@ -15,7 +15,7 @@ contract WagerlyKinto {
     address public constant KINTO_TOKEN_ADDRESS = 0x010700808D59d2bb92257fCafACfe8e5bFF7aB87;
 
     // Fee address where 1% of the total bet will be sent
-    address private constant FEE_ADDRESS = 0x768179b1710F217d5fB33f02A38986F04d1b0b4f;
+    address private constant FEE_ADDRESS = 0x55b06edb0eD031E48e7e24a5F40bE2D38a5352e9;
 
     // Keeps track of the next bet ID
     uint256 private nextBetId = 1;
