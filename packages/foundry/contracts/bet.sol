@@ -26,9 +26,10 @@ contract Wagerly {
         mapping(address => Bet[]) bets;  
         address[] bettors;
         address creator;
-        bool isClosed;
+        bool isOpen;
         bool isResolved;
         uint8 winningOption;
+        bool isCanceled;
     }
 
     mapping(uint256 => BetInstance) private betInstances;
@@ -47,8 +48,8 @@ contract Wagerly {
     }
 
     function createBetInstance(
-        string calldata _title,      
-        uint8 _numOptions,
+        string calldata _title,  
+        uint8 _numOptions, 
         string[] calldata _optionNames,
         uint256 _minimumBetAmount,
         address _tokenAddress
@@ -80,7 +81,7 @@ contract Wagerly {
 
     function placeBet(uint256 _betId, uint256 _amount, uint8 _option) external {
         BetInstance storage betInstance = betInstances[_betId];
-        require(!betInstance.isClosed, "Betting is closed");
+        require(betInstance.isOpen, "Betting is closed");
         require(_amount >= betInstance.minimumBetAmount, "Bet amount is less than minimum");
         require(_option >= 1 && _option <= betInstance.options.length, "Invalid option");
 
@@ -96,7 +97,7 @@ contract Wagerly {
 
     function closeBetting(uint256 _betId) external onlyCreator(_betId) {
         BetInstance storage betInstance = betInstances[_betId];
-        betInstance.isClosed = true;
+        betInstance.isOpen = false;
         emit BettingClosed(_betId);
     }
 
@@ -104,7 +105,7 @@ contract Wagerly {
         require(_winningOption >= 1 && _winningOption <= betInstances[_betId].options.length, "Invalid winning option");
 
         BetInstance storage betInstance = betInstances[_betId];
-        require(betInstance.isClosed && !betInstance.isResolved, "Betting must be closed and not resolved");
+        require(!betInstance.isOpen && !betInstance.isResolved, "Betting must be closed and not resolved");
 
         IERC20 token = IERC20(betInstance.tokenAddress);
 
@@ -144,7 +145,7 @@ contract Wagerly {
     function cancelBet(uint256 _betId) external onlyCreator(_betId) {
         BetInstance storage betInstance = betInstances[_betId];
         require(!betInstance.isResolved, "Betting already resolved");
-
+        betInstance.isCanceled = true;
         IERC20 token = IERC20(betInstance.tokenAddress);
 
         uint256 totalAmountToDistribute = 0;
@@ -176,19 +177,20 @@ contract Wagerly {
         address creator,
         string memory title,         
         string[] memory options,
-        bool isClosed,
+        bool isOpen,
         bool isResolved,
         uint256 totalAmountBet,
         uint256[] memory totalAmounts,
         address tokenAddress,
-        uint8 winningOption
+        uint8 winningOption,
+        bool isCanceled
     ) {
         BetInstance storage betInstance = betInstances[_betId];
 
         creator = betInstance.creator;
         title = betInstance.title;          
         options = betInstance.options;
-        isClosed = betInstance.isClosed;
+        isOpen = betInstance.isOpen;
         isResolved = betInstance.isResolved;
 
         totalAmounts = new uint256[](betInstance.totalAmounts.length);
@@ -205,12 +207,96 @@ contract Wagerly {
             creator,
             title,
             options,
-            isClosed,
+            isOpen,
             isResolved,
             totalAmountBet,
             totalAmounts,
             tokenAddress,
-            winningOption
+            winningOption,
+            isCanceled
         );
     }
+
+    function getOpenBetsByAddress(address _bettor) external view returns (
+        uint256[] memory openBetIds, 
+        string[] memory titles, 
+        uint256[] memory amounts, 
+        string[][] memory options
+    ) {
+        uint256 openBetCount = 0;
+
+        for (uint256 i = 1; i < nextBetId; i++) {
+            BetInstance storage betInstance = betInstances[i];
+            
+            if (betInstance.isOpen && betInstance.bets[_bettor].length > 0) {
+                openBetCount++;
+            }
+        }
+
+        openBetIds = new uint256[](openBetCount);
+        titles = new string[](openBetCount);
+        amounts = new uint256[](openBetCount);
+        options = new string[][](openBetCount);
+
+        uint256 index = 0;
+
+        for (uint256 i = 1; i < nextBetId; i++) {
+            BetInstance storage betInstance = betInstances[i];
+
+            if (betInstance.isOpen && betInstance.bets[_bettor].length > 0) {
+                openBetIds[index] = betInstance.id;
+                titles[index] = betInstance.title;
+
+                uint256 totalAmountBetByUser = 0;
+                Bet[] storage bets = betInstance.bets[_bettor];
+                for (uint256 j = 0; j < bets.length; j++) {
+                    totalAmountBetByUser += bets[j].amount;
+                }
+                amounts[index] = totalAmountBetByUser;
+                options[index] = betInstance.options;
+
+                index++;
+            }
+        }
+    }
+
+    function getAllOpenBets() external view returns (
+        uint256[] memory openBetIds, 
+        string[] memory titles, 
+        string[][] memory options, 
+        uint256[] memory minimumBetAmounts, 
+        address[] memory creators
+    ) {
+        uint256 openBetCount = 0;
+
+        for (uint256 i = 1; i < nextBetId; i++) {
+            BetInstance storage betInstance = betInstances[i];
+            if (betInstance.isOpen) {
+                openBetCount++;
+            }
+        }
+
+        openBetIds = new uint256[](openBetCount);
+        titles = new string[](openBetCount);
+        options = new string[][](openBetCount);
+        minimumBetAmounts = new uint256[](openBetCount);
+        creators = new address[](openBetCount);
+
+        uint256 index = 0;
+
+        for (uint256 i = 1; i < nextBetId; i++) {
+            BetInstance storage betInstance = betInstances[i];
+
+            if (betInstance.isOpen) {
+                openBetIds[index] = betInstance.id;
+                titles[index] = betInstance.title;
+                options[index] = betInstance.options;
+                minimumBetAmounts[index] = betInstance.minimumBetAmount;
+                creators[index] = betInstance.creator;
+
+                index++;
+            }
+        }
+    }
+
 }

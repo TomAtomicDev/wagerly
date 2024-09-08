@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import "@chainlink/contracts/src/v0.8/AutomationCompatible.sol";
+import "@chainlink/contracts/src/v0.8/interfaces/KeeperCompatibleInterface.sol";
 
 interface IERC20 {
     function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
@@ -9,10 +9,9 @@ interface IERC20 {
     function balanceOf(address account) external view returns (uint256);
 }
 
-contract Wagerly is AutomationCompatible {
+contract Wagerly is KeeperCompatibleInterface {
     address private constant FEE_ADDRESS = 0x9b63FA365019Dd7bdF8cBED2823480F808391970;
-    uint256 private nextBetId = 1;
-    uint256 private constant DISTRIBUTION_DELAY = 5 minutes;
+    uint256 private nextBetId = 1;  
 
     struct Bet {
         address bettor;
@@ -32,7 +31,8 @@ contract Wagerly is AutomationCompatible {
         bool isClosed;
         bool isResolved;
         uint8 winningOption;
-        uint256 distributionTime; // Tiempo en el que se debe distribuir el premio
+        uint256 distributionTime; 
+        bool isDistributionScheduled; 
     }
 
     mapping(uint256 => BetInstance) private betInstances;
@@ -42,15 +42,16 @@ contract Wagerly is AutomationCompatible {
     event BettingClosed(uint256 indexed betId);
     event BettingResolved(uint256 indexed betId, uint8 winningOption);
     event BetCancelled(uint256 indexed betId);
-    event WinningsDistributed(uint256 indexed betId);
-
+    event DistributionScheduled(uint256 indexed betId, uint256 distributionTime); 
+    
     modifier onlyCreator(uint256 _betId) {
         require(msg.sender == betInstances[_betId].creator, "Not authorized");
         _;
     }
 
+    // Función para crear una nueva instancia de apuesta
     function createBetInstance(
-        string calldata _title,
+        string calldata _title,      
         uint8 _numOptions,
         string[] calldata _optionNames,
         uint256 _minimumBetAmount,
@@ -77,6 +78,7 @@ contract Wagerly is AutomationCompatible {
         emit BetInstanceCreated(msg.sender, betId, _title, _optionNames, _minimumBetAmount, _tokenAddress);
     }
 
+    // Función para hacer una apuesta
     function placeBet(uint256 _betId, uint256 _amount, uint8 _option) external {
         BetInstance storage betInstance = betInstances[_betId];
         require(!betInstance.isClosed, "Betting is closed");
@@ -93,45 +95,35 @@ contract Wagerly is AutomationCompatible {
         emit BetPlaced(_betId, msg.sender, _amount, _option);
     }
 
+    // Función para cerrar las apuestas
     function closeBetting(uint256 _betId) external onlyCreator(_betId) {
         BetInstance storage betInstance = betInstances[_betId];
-        require(!betInstance.isClosed, "Betting is already closed");
         betInstance.isClosed = true;
         emit BettingClosed(_betId);
     }
 
+    // Función para llamar cuando se determine el ganador
     function distributeWinnings(uint256 _betId, uint8 _winningOption) external onlyCreator(_betId) {
         BetInstance storage betInstance = betInstances[_betId];
-        require(betInstance.isClosed && !betInstance.isResolved, "Betting must be closed and not resolved");
         require(_winningOption >= 1 && _winningOption <= betInstance.options.length, "Invalid winning option");
-
+        require(betInstance.isClosed && !betInstance.isResolved, "Betting must be closed and not resolved");
+        
         betInstance.isResolved = true;
         betInstance.winningOption = _winningOption;
-        betInstance.distributionTime = block.timestamp + DISTRIBUTION_DELAY;
+
+        // Programar la distribución en 24 horas
+        betInstance.distributionTime = block.timestamp + 24 hours;
+        betInstance.isDistributionScheduled = true;
 
         emit BettingResolved(_betId, _winningOption);
+        emit DistributionScheduled(_betId, betInstance.distributionTime);
     }
 
-    function checkUpkeep(bytes calldata) external view override returns (bool upkeepNeeded, bytes memory performData) {
-        for (uint256 betId = 1; betId < nextBetId; betId++) {
-            BetInstance storage betInstance = betInstances[betId];
-            if (betInstance.isResolved && !betInstance.isClosed && block.timestamp >= betInstance.distributionTime) {
-                return (true, abi.encode(betId));
-            }
-        }
-        return (false, "");
-    }
-
-    function performUpkeep(bytes calldata performData) external override {
-        (uint256 betId) = abi.decode(performData, (uint256));
-        BetInstance storage betInstance = betInstances[betId];
-        if (betInstance.isResolved && !betInstance.isClosed && block.timestamp >= betInstance.distributionTime) {
-            _distributeWinnings(betId);
-        }
-    }
-
-    function _distributeWinnings(uint256 _betId) internal {
+    // Función para distribuir los premios (usada por Chainlink Keepers)
+    function distribute(uint256 _betId) internal {
         BetInstance storage betInstance = betInstances[_betId];
+        require(betInstance.isResolved, "Bet not resolved");
+        require(block.timestamp >= betInstance.distributionTime, "Distribution time has not been reached");
 
         IERC20 token = IERC20(betInstance.tokenAddress);
 
@@ -144,7 +136,7 @@ contract Wagerly is AutomationCompatible {
         uint256 fee = totalAmountToDistribute / 100;
         uint256 creatorFee = fee;
         uint256 remainingAmount = totalAmountToDistribute - fee - creatorFee;
-
+        
         require(token.transfer(FEE_ADDRESS, fee), "Fee transfer failed");
         require(token.transfer(betInstance.creator, creatorFee), "Creator fee transfer failed");
 
@@ -152,14 +144,37 @@ contract Wagerly is AutomationCompatible {
             address bettor = betInstance.bettors[i];
             Bet[] storage bets = betInstance.bets[bettor];
             for (uint8 j = 0; j < bets.length; j++) {
-                uint256 amountToTransfer = (bets[j].amount * remainingAmount) / totalAmountWinningOption;
-                require(token.transfer(bettor, amountToTransfer), "Winner transfer failed");
+                if (bets[j].bettor != address(0)) {
+                    uint256 amountToTransfer = (bets[j].amount * remainingAmount) / totalAmountWinningOption;
+                    require(token.transfer(bettor, amountToTransfer), "Winner transfer failed");
+                }
             }
         }
 
-        emit WinningsDistributed(_betId);
+        betInstance.isDistributionScheduled = false;
     }
 
+    // Función necesaria para Chainlink Keepers
+    function checkUpkeep(bytes calldata) external view override returns (bool upkeepNeeded, bytes memory performData) {
+    for (uint256 i = 1; i < nextBetId; i++) {
+        if (betInstances[i].isDistributionScheduled && block.timestamp >= betInstances[i].distributionTime) {
+            upkeepNeeded = true;
+            performData = abi.encode(i);
+            break;
+        }
+    }
+}
+
+
+    // Función necesaria para Chainlink Keepers
+    function performUpkeep(bytes calldata performData) external override {
+        uint256 betId = abi.decode(performData, (uint256));
+        if (betInstances[betId].isDistributionScheduled && block.timestamp >= betInstances[betId].distributionTime) {
+            distribute(betId);
+        }
+    }
+
+    // Función para cancelar la apuesta
     function cancelBet(uint256 _betId) external onlyCreator(_betId) {
         BetInstance storage betInstance = betInstances[_betId];
         require(!betInstance.isResolved, "Betting already resolved");
@@ -174,7 +189,7 @@ contract Wagerly is AutomationCompatible {
         uint256 fee = totalAmountToDistribute / 100;
         uint256 creatorFee = fee;
         uint256 remainingAmount = totalAmountToDistribute - fee - creatorFee;
-
+        
         require(token.transfer(FEE_ADDRESS, fee), "Fee transfer failed");
         require(token.transfer(betInstance.creator, creatorFee), "Creator fee transfer failed");
 
@@ -191,6 +206,7 @@ contract Wagerly is AutomationCompatible {
         emit BetCancelled(_betId);
     }
 
+    // Función para obtener información de la apuesta
     function getBetInfo(uint256 _betId) external view returns (
         address creator,
         string memory title,
@@ -200,22 +216,37 @@ contract Wagerly is AutomationCompatible {
         uint256 totalAmountBet,
         uint256[] memory totalAmounts,
         address tokenAddress,
-        uint8 winningOption,
-        uint256 distributionTime
+        uint8 winningOption
     ) {
         BetInstance storage betInstance = betInstances[_betId];
+
         creator = betInstance.creator;
         title = betInstance.title;
         options = betInstance.options;
         isClosed = betInstance.isClosed;
         isResolved = betInstance.isResolved;
+
+        totalAmounts = new uint256[](betInstance.totalAmounts.length);
         totalAmountBet = 0;
         for (uint8 i = 0; i < betInstance.totalAmounts.length; i++) {
+            totalAmounts[i] = betInstance.totalAmounts[i];
             totalAmountBet += betInstance.totalAmounts[i];
         }
-        totalAmounts = betInstance.totalAmounts;
+
         tokenAddress = betInstance.tokenAddress;
-        winningOption = betInstance.winningOption;
-        distributionTime = betInstance.distributionTime;
+        winningOption = betInstance.isResolved ? betInstance.winningOption : 0;
+
+        return (
+            creator,
+            title,
+            options,
+            isClosed,
+            isResolved,
+            totalAmountBet,
+            totalAmounts,
+            tokenAddress,
+            winningOption
+        );
     }
+    
 }
