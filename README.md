@@ -1,5 +1,8 @@
 README WAGERLY
 
+## Review our Demo 🎥
+[Demo Wagerly](https://www.youtube.com/watch?v=kUj86SOrcfE)
+
 # Wagerly 🎰
 Wagerly is a decentralized betting platform where users create and customize bets with friends or the community. Enjoy open, fair, and transparent betting, with instant payouts via Chainlink. User bets have a 24-hour claim period for added fairness.
 
@@ -96,6 +99,3 @@ Link: https://sepolia.etherscan.io/address/0xEE185AB9e02323F86eDabE3Fc558FED8Ec7
 - **Relevant Bet Suggestions**: In addition to friends' bets, the feed will also show recommended bets based on user activity and popular bets in their social network 🔥.
 
 These improvements aim to create a smoother, more personalized, and socially engaging experience where users can easily connect with bets they find interesting and share the experience with their community 🌐🎉.
-
-## Review our Demo 🎥
-[Demo Wagerly](https://www.youtube.com/watch?v=kUj86SOrcfE)

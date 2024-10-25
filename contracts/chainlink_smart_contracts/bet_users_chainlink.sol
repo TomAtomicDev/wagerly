@@ -11,7 +11,7 @@ interface IERC20 {
 
 contract WagerlyUsers is KeeperCompatibleInterface {
     address public owner;  // Contract owner address
-    address private constant FEE_ADDRESS = 0x9b63FA365019Dd7bdF8cBED2823480F808391970;
+    address private constant FEE_ADDRESS = 0xd806A01E295386ef7a7Cea0B9DA037B242622743;
     uint256 private nextBetId = 1;  // Keeps track of the next bet ID
 
     struct Bet {

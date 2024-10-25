@@ -12,7 +12,7 @@ contract WagerlyPlatform {
     address public owner;
     
     // Fee address where 1% of the total bet will be sent
-    address private constant FEE_ADDRESS = 0x9b63FA365019Dd7bdF8cBED2823480F808391970;
+    address private constant FEE_ADDRESS = 0xd806A01E295386ef7a7Cea0B9DA037B242622743;
     
     // Keeps track of the next bet ID
     uint256 private nextBetId = 1;  
