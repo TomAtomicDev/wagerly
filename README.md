@@ -69,7 +69,9 @@ Chainlink oracles are integrated to automate results and fund distribution. For 
 
 ## Kinto Address Contract:
 -**Deployer**: 0x9b63FA365019Dd7bdF8cBED2823480F808391970
+
 -**Deployed to**: 0x3009eF74398Bef08a8e245926213211EaEf54a11
+
 -**Transaction hash**: 0x8e58b5f1792589b72589339eb0d6ce02a68d044c3f07d270c010b840b4adb71f
 
 ## Chinlink-Sepolia Tesnet
